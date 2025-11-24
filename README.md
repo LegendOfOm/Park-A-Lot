@@ -11,7 +11,8 @@ Exact Instructions:
 5. You should now also have MSYS2 MINGW64 terminal as an accessible app. Open this terminal
 6. Just like before, run pacman -Syu (restart after if necessary) and then pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb
 7. Run (In the same MSYS2 MINGW64 terminal) pacman -S mingw-w64-x86_64-sfml
-8. That should be it. I already adjusted all of the vscode json files to work so you shouldn't have to go through the same suffering I did. Please open the sfml folder as the root path in the editor so that you don't have other .jsons messing with the setup.
+8. Go through the .vscode Windows folder and rename it .vscode (make sure it is under SFML). Adjust all of the file paths IF NECESSARY (shouldn't be) in the .json to match your workspace.
+9. That should be it. I already adjusted all of the vscode json files to work so you shouldn't have to go through the same suffering I did. Please open the sfml folder as the root path in the editor so that you don't have other .jsons messing with the setup.
 
 MAC Instructions
 1. Download Homebrew by opening terminal and run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -19,4 +20,4 @@ MAC Instructions
 3. Run in terminal: brew update    brew upgrade
 4. Install the compiler (terminal. You probably already have this though): xcode-select --install
 5. Instal sfml (terminal): brew install sfml
-6. Adjust your .json files in vsCode to match the Mac ones specifically
+6. Adjust your IF NECESSARY (shouldn't be) in vsCode to match the Mac ones specifically.
