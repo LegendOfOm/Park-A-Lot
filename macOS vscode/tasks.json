@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-sfml-mac",
+      "type": "shell",
+      "command": "clang++",
+      "args": [
+        "-std=c++17",
+        "${workspaceFolder}/main.cpp",
+
+        "-I", "/opt/homebrew/include",
+        "-L", "/opt/homebrew/lib",
+
+        "-lsfml-graphics",
+        "-lsfml-window",
+        "-lsfml-system",
+
+        "-o", "${workspaceFolder}/sfml_app",
+
+        "-rpath", "/opt/homebrew/lib"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}

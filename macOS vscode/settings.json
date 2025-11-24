@@ -1,0 +1,10 @@
+{
+  "C_Cpp.default.compilerPath": "/usr/bin/clang++",
+  "C_Cpp.intelliSenseEngineFallback": "Disabled",
+  "files.associations": {
+    "iostream": "cpp",
+    "ostream": "cpp",
+    "string": "cpp",
+    "cmath": "cpp"
+  }
+}
