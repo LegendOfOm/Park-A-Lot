@@ -19,3 +19,4 @@ MAC Instructions
 3. Run in terminal: brew update    brew upgrade
 4. Install the compiler (terminal. You probably already have this though): xcode-select --install
 5. Instal sfml (terminal): brew install sfml
+6. Adjust your .json files in vsCode to match the Mac ones specifically
