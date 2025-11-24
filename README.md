@@ -12,6 +12,7 @@ Exact Instructions:
 6. Just like before, run pacman -Syu (restart after if necessary) and then pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb
 7. Run (In the same MSYS2 MINGW64 terminal) pacman -S mingw-w64-x86_64-sfml
 8. That should be it. I already adjusted all of the vscode json files to work so you shouldn't have to go through the same suffering I did. Please open the sfml folder as the root path in the editor so that you don't have other .jsons messing with the setup.
+
 MAC Instructions
 1. Download Homebrew by opening terminal and run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 2. Add Homebrew to your shell environement. Normally this means these commands: echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile   eval "$(/opt/homebrew/bin/brew shellenv)"
