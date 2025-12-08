@@ -1,0 +1,211 @@
+#include <SFML/Graphics.hpp>
+#include <SFML/Window/Event.hpp>
+#include <iostream>
+#include <string>
+#include <optional>
+#include <utility>
+
+bool loadSafeFont(sf::Font& font) {
+    bool loaded = false;
+
+    // 1. Windows Comic Sans (regular + bold)
+#if defined(_WIN32)
+    if (!loaded) loaded = font.openFromFile("C:\\Windows\\Fonts\\comic.ttf");
+    if (!loaded) loaded = font.openFromFile("C:\\Windows\\Fonts\\comicbd.ttf");
+#endif
+
+    // 2. Try project assets folder (Comic Sans, custom fonts)
+    if (!loaded) loaded = font.openFromFile("assets/comic.ttf");
+
+    // 3. macOS fallback — guaranteed system fonts
+#if defined(__APPLE__)
+    if (!loaded) loaded = font.openFromFile("/System/Library/Fonts/Supplemental/Arial.ttf");
+    if (!loaded) loaded = font.openFromFile("/System/Library/Fonts/Helvetica.ttc");
+#endif
+
+    // 4. Linux fallback (DejaVu Sans)
+#if defined(__linux__)
+    if (!loaded) loaded = font.openFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+#endif
+
+    // 5. LAST RESORT — give up but avoid crashes
+    if (!loaded) {
+        std::cerr << "WARNING: No Comic Sans found. Using default fallback.\n";
+#if defined(__APPLE__)
+        font.openFromFile("/System/Library/Fonts/Supplemental/Arial.ttf");
+#else
+        // Users must supply something here, so try assets folder
+        font.openFromFile("assets/arial.ttf");
+#endif
+    }
+
+    return true; // ALWAYS succeed to avoid UI failure
+}
+
+class InputBox {
+public:
+    sf::RectangleShape box;
+    sf::Text text;
+    std::string value;
+    bool active = false;
+
+    InputBox(float x, float y, const sf::Font& font)
+        : box({200.f, 40.f})
+        , text(font, "", 22)
+    {
+        box.setPosition({x, y});
+        box.setFillColor(sf::Color(200, 200, 200)); 
+
+        text.setFillColor(sf::Color::Black);
+        text.setPosition({x + 5.f, y + 5.f});
+    }
+
+    void handleText(char32_t code) {
+        if (!active) return;
+
+        // Backspace
+        if (code == U'\b' || code == 8) {
+            if (!value.empty()) {
+                value.pop_back();
+                text.setString(value);
+            }
+            return;
+        }
+
+        // Accept digits only
+        if (code >= U'0' && code <= U'9') {
+            value += static_cast<char>(code);
+            text.setString(value);
+        }
+    }
+
+    bool clicked(float mx, float my) const {
+        return box.getGlobalBounds().contains({mx, my});
+    }
+};
+
+
+
+std::pair<int, int> runUI() {
+    sf::RenderWindow window(sf::VideoMode({600u, 400u}), "Parking Lot Simulator");
+    window.setFramerateLimit(60);
+    window.requestFocus();  
+
+    // Load safe cross-platform font
+    sf::Font font;
+    loadSafeFont(font);
+
+    sf::Text title(font, "Parking Lot Simulator", 32);
+    title.setFillColor(sf::Color::White);
+    title.setPosition({100.f, 10.f});
+
+   
+    sf::Text lengthLabel(font, "Length", 22);
+    lengthLabel.setFillColor(sf::Color::White);
+    lengthLabel.setPosition({50.f, 75.f - 30.f});
+
+    sf::Text widthLabel(font, "Width", 22);
+    widthLabel.setFillColor(sf::Color::White);
+    widthLabel.setPosition({50.f, 150.f - 30.f});
+
+ 
+    InputBox lengthBox(50.f, 75.f, font);
+    InputBox widthBox(50.f, 150.f, font);
+
+    
+    sf::RectangleShape startBtn({150.f, 50.f});
+    startBtn.setPosition({50.f, 250.f});
+    startBtn.setFillColor(sf::Color(150, 200, 255));
+
+    sf::Text startText(font, "Start", 26);
+    startText.setFillColor(sf::Color::Black);
+    startText.setPosition({95.f, 260.f});
+
+   
+    while (window.isOpen()) {
+
+        while (const std::optional<sf::Event> event = window.pollEvent()) {
+
+            if (event->is<sf::Event::Closed>()) {
+                window.close();
+                continue;
+            }
+
+            // Text Input
+            if (const auto* te = event->getIf<sf::Event::TextEntered>()) {
+                if (lengthBox.active) lengthBox.handleText(te->unicode);
+                if (widthBox.active)  widthBox.handleText(te->unicode);
+            }
+
+            // Mouse Click
+            if (const auto* mb = event->getIf<sf::Event::MouseButtonPressed>()) {
+                float mx = float(mb->position.x);
+                float my = float(mb->position.y);
+
+                // Activate the clicked input box
+                if (lengthBox.clicked(mx, my)) {
+                    lengthBox.active = true;
+                    widthBox.active = false;
+                }
+                else if (widthBox.clicked(mx, my)) {
+                    widthBox.active = true;
+                    lengthBox.active = false;
+                }
+                else {
+                    lengthBox.active = false;
+                    widthBox.active = false;
+                }
+
+                // Start button clicked
+                if (startBtn.getGlobalBounds().contains({mx, my})) {
+                    if (!lengthBox.value.empty() && !widthBox.value.empty()) {
+                        int L = std::stoi(lengthBox.value);
+                        int W = std::stoi(widthBox.value);
+                        window.close();
+                        return {L, W};
+                    }
+                }
+            }
+        }
+
+      
+        window.clear(sf::Color(40, 40, 40));
+
+        window.draw(title);
+
+        window.draw(lengthLabel);
+        window.draw(widthLabel);
+
+        window.draw(lengthBox.box);
+        window.draw(lengthBox.text);
+
+        window.draw(widthBox.box);
+        window.draw(widthBox.text);
+
+        window.draw(startBtn);
+        window.draw(startText);
+
+        window.display();
+    }
+
+    return {0, 0};
+}
+
+
+//put the simulation here
+void runSimulation(int length, int width) {
+    std::cout << "Starting simulation with:\n";
+    std::cout << "Length = " << length << "\n";
+    std::cout << "Width  = " << width  << "\n";
+}
+
+
+
+int main() {
+    auto [L, W] = runUI();
+
+    std::cout << "UI returned values: " << L << ", " << W << "\n";
+
+    runSimulation(L, W);
+    return 0;
+}
