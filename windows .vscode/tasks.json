@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "cppbuild",
+      "label": "build-sfml-64",
+      "command": "C:/msys64/mingw64/bin/g++.exe",
+      "args": [
+        "-g",
+        "-std=c++17",
+
+        "-I",
+        "C:/msys64/mingw64/include",
+
+        "${workspaceFolder}/main.cpp",
+
+        "-L",
+        "C:/msys64/mingw64/lib",
+
+        "-lsfml-graphics",
+        "-lsfml-window",
+        "-lsfml-system",
+
+        "-o",
+        "${workspaceFolder}/sfml_test.exe"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "SFML 64-bit build with MSYS2 MinGW-w64"
+    }
+  ]
+}
