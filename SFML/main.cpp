@@ -280,6 +280,78 @@ std::vector<Stall> bestStallsForRegion(const ParkingRegion& R)
     return best;
 }
 
+// After lanes are finalized, use any narrow vertical gaps between full-height
+// lanes to place parallel stalls (long side along the lane).
+// We only use gaps where perpendicular stalls cannot fit (gapW < STALL_DEPTH)
+// but parallel stalls can (gapW >= STALL_WIDTH).
+void addParallelInNarrowGaps(std::vector<Stall>& stalls,
+                             const std::vector<Lane>& lanes,
+                             double lotW,
+                             double lotL)
+{
+    // 1) collect full-height vertical driving lanes
+    std::vector<const Rect*> strips;
+    for (const auto& ln : lanes) {
+        const Rect& r = ln.r;
+        double w = r.x1 - r.x0;
+        double h = r.y1 - r.y0;
+
+        bool spansFullHeight =
+            (r.y0 <= 1e-6) && (r.y1 >= lotL - 1e-6);
+        bool isVerticalStrip =
+            (w <= LANE_W + 1e-3) && (h > w);
+
+        if (spansFullHeight && isVerticalStrip) {
+            strips.push_back(&r);
+        }
+    }
+
+    if (strips.size() < 2) return;
+
+    std::sort(strips.begin(), strips.end(),
+              [](const Rect* a, const Rect* b) {
+                  return a->x0 < b->x0;
+              });
+
+    // 2) for each adjacent pair of lanes, see if the gap works
+    for (size_t i = 0; i + 1 < strips.size(); ++i) {
+        const Rect& a = *strips[i];
+        const Rect& b = *strips[i + 1];
+
+        double gapX0 = a.x1;
+        double gapX1 = b.x0;
+        double gapW  = gapX1 - gapX0;
+
+        // Only consider "narrow" gaps: too small for 5m depth,
+        // but large enough for a 2.5m-wide parallel stall.
+        if (gapW + 1e-6 < STALL_WIDTH) continue;
+        if (gapW > STALL_DEPTH + 1e-6) continue;
+
+        int nAlongX = static_cast<int>(std::floor(gapW / STALL_WIDTH));
+        if (nAlongX <= 0) continue;
+
+        // Along Y, avoid the top/bottom lane connectors: leave LANE_W clear.
+        double freeY0 = LANE_W;
+        double freeY1 = lotL - LANE_W;
+        double freeH  = freeY1 - freeY0;
+        if (freeH < STALL_DEPTH) continue;
+
+        int nAlongY = static_cast<int>(std::floor(freeH / STALL_DEPTH));
+
+        for (int ix = 0; ix < nAlongX; ++ix) {
+            double x0 = gapX0 + ix * STALL_WIDTH;
+            double x1 = x0 + STALL_WIDTH;
+
+            for (int iy = 0; iy < nAlongY; ++iy) {
+                double y0 = freeY0 + iy * STALL_DEPTH;
+                double y1 = y0 + STALL_DEPTH;
+
+                Rect r{ x0, y0, x1, y1 };
+                stalls.push_back({ r });
+            }
+        }
+    }
+}
 
 Layout buildVerticalSnake(double lotW, double lotL, int N)
 {
@@ -314,34 +386,11 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
 
     std::vector<ParkingRegion> regions;
 
-    // left margin
-    if (laneX0[0] > 0.5) {
-        regions.push_back(ParkingRegion{
-            Rect{0.0, 0.0, laneX0[0], lotL},
-            Edge::Right  // region is touched by lane on the right
-        });
+    // vertical lanes (full height)
+    for (int i = 0; i < N; ++i) {
+        Rect r{ laneX0[i], 0.0, laneX1[i], lotL };
+        lanes.push_back({r});
     }
-
-    // between lanes
-    for (int i = 0; i < N - 1; ++i) {
-        double x0 = laneX1[i];
-        double x1 = laneX0[i + 1];
-        if (x1 > x0 + 0.1) {
-            regions.push_back(ParkingRegion{
-                Rect{x0, 0.0, x1, lotL},
-                Edge::Left  // or Right; you can decide a convention
-            });
-        }
-    }
-
-    // right margin
-    if (laneX1[N-1] < lotW - 0.5) {
-        regions.push_back(ParkingRegion{
-            Rect{laneX1[N-1], 0.0, lotW, lotL},
-            Edge::Left
-        });
-    }
-
 
     // ----------------------------------------------------
     // Snake connectors between adjacent lanes
@@ -361,16 +410,22 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
         }
     }
 
-    // ----------------------------------------------------
-    // Closing connector: last lane back to first (bottom).
-    // This turns the snake into a continuous loop.
-    // ----------------------------------------------------
+    // Closing connector (last lane back to first, at bottom)
     if (N >= 2) {
         double x0 = laneX1[N - 1];
         double x1 = laneX0[0];
         if (x1 < x0) std::swap(x0, x1);
         Rect closing{ x0, 0.0, x1, LANE_W };
         lanes.push_back({closing});
+    }
+
+    // Now ensure two full-height connectors (may add a mirrored lane)
+    {
+        Layout tmp;
+        tmp.valid = true;
+        tmp.lanes = lanes;
+        ensureTwoVerticalConnectors(tmp, lotW, lotL);
+        lanes = tmp.lanes;  // update with any added lane
     }
 
     // ----------------------------------------------------
@@ -442,6 +497,9 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
     // lanes visually. We can clean that up later.
     // ----------------------------------------------------
 
+    // Use narrow gaps between full-height lanes for parallel stalls
+    addParallelInNarrowGaps(stalls, lanes, lotW, lotL);
+
     const double lotArea = lotW * lotL;
 
     L.valid       = true;
@@ -449,8 +507,7 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
     L.stalls      = std::move(stalls);
     L.entrance    = entrance;
     L.exit        = exit;
-    
-    ensureTwoVerticalConnectors(L, lotW, lotL);
+
     finalizeLayout(L, lotW, lotL);
     
     if (hasTooNarrowLane(L)) {
