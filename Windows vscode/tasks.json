@@ -6,27 +6,25 @@
       "type": "shell",
       "command": "C:/msys64/mingw64/bin/g++.exe",
       "args": [
+        "-g",
         "-std=c++17",
-        "${workspaceFolder}/main.cpp",
-
         "-I", "C:/msys64/mingw64/include",
-        "-L", "C:/msys64/mingw64/lib",
 
+        //compile BOTH sources
+        "${workspaceFolder}/main.cpp",
+        "${workspaceFolder}/ui.cpp",
+
+        "-L", "C:/msys64/mingw64/lib",
         "-lsfml-graphics",
         "-lsfml-window",
         "-lsfml-system",
-
-        "-o",
-        "${workspaceFolder}/sfml_app.exe"
+        "-o", "${workspaceFolder}/sfml_test.exe"
       ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": ["$gcc"],
       "group": {
         "kind": "build",
         "isDefault": true
-      }
+      },
+      "problemMatcher": "$gcc"
     }
   ]
 }
