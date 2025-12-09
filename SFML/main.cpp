@@ -38,6 +38,12 @@ struct Lane {
 
 enum class Edge { Bottom, Top, Left, Right };
 
+enum class StallPattern {
+    Perpendicular, // classic 90° parking (what you have now)
+    Parallel       // long side along the lane (parallel parking)
+};
+
+
 struct Gate {
     Edge   edge;     // which side of lot
     double offset;   // along that edge (metres)
@@ -57,6 +63,12 @@ struct Layout {
     double usedArea     = 0.0;
     double wastedArea   = 0.0;
 };
+
+struct ParkingRegion {
+    Rect area;   // free rectangle
+    Edge side;   // which side is touched by a lane (Bottom, Top, Left, Right)
+};
+
 
 // --------------------------------------------------------
 // Rect helpers
@@ -121,7 +133,7 @@ void finalizeLayout(Layout& L, double lotW, double lotL)
     L.stalls     = std::move(cleaned);
     L.stallCount = static_cast<int>(L.stalls.size());
     L.usedArea   = laneArea + stallArea;
-    L.wastedArea = lotArea - L.usedArea;
+    L.wastedArea = std::max(0.0, lotArea - L.usedArea);
 }
 
 // Ensure we have two full-height vertical connectors (for short lots
@@ -176,6 +188,98 @@ void ensureTwoVerticalConnectors(Layout& L, double lotW, double lotL)
     }
 }
 
+bool hasTooNarrowLane(const Layout& L)
+{
+    for (const auto& ln : L.lanes) {
+        double dx = ln.r.x1 - ln.r.x0;
+        double dy = ln.r.y1 - ln.r.y0;
+        double laneWidth = std::min(dx, dy);   // physical lane width
+
+        if (laneWidth + 1e-6 < LANE_W) {
+            return true;   // this lane is narrower than allowed
+        }
+    }
+    return false;
+}
+
+std::vector<Stall> generateStallsForStrip(const ParkingRegion& R, StallPattern pattern)
+{
+    std::vector<Stall> out;
+
+    double W = R.area.x1 - R.area.x0; // strip width (x)
+    double H = R.area.y1 - R.area.y0; // strip height (y)
+
+    // We assume lane runs vertically next to this strip,
+    // so "along lane" is y, "away from lane" is x.
+
+    if (pattern == StallPattern::Perpendicular) {
+        // 90° parking: depth -> x, width -> y
+        if (W < STALL_DEPTH || H < STALL_WIDTH) return out;
+
+        int rowsDeep = 1; // only one row touching the lane side to be safe
+        int along    = static_cast<int>(std::floor(H / STALL_WIDTH));
+
+        double stripX0;
+        if (R.side == Edge::Left) {
+            // lane is on left side -> stalls start right next to lane
+            stripX0 = R.area.x0;
+        } else {
+            // lane on right side
+            stripX0 = R.area.x1 - STALL_DEPTH;
+        }
+
+        for (int i = 0; i < along; ++i) {
+            double y0 = R.area.y0 + i * STALL_WIDTH;
+            double y1 = y0 + STALL_WIDTH;
+            double x0 = stripX0;
+            double x1 = stripX0 + STALL_DEPTH;
+            out.push_back({ Rect{x0, y0, x1, y1} });
+        }
+    }
+    else if (pattern == StallPattern::Parallel) {
+        // Parallel parking: width -> x (along lane), depth -> y
+        if (W < STALL_WIDTH || H < STALL_DEPTH) return out;
+
+        int along    = static_cast<int>(std::floor(W / STALL_WIDTH));
+        int rowsDeep = 1; // again, one row touching the lane
+
+        double stripY0;
+        if (R.side == Edge::Left || R.side == Edge::Right) {
+            // lane runs vertically, so "away" is ±y; choose side closest to lane.
+            // If lane is to the left, stalls touch same y-range; here we just use bottom.
+            stripY0 = R.area.y0;
+        } else {
+            // not used for vertical strips
+            return out;
+        }
+
+        for (int i = 0; i < along; ++i) {
+            double x0 = R.area.x0 + i * STALL_WIDTH;
+            double x1 = x0 + STALL_WIDTH;
+            double y0 = stripY0;
+            double y1 = stripY0 + STALL_DEPTH;
+            out.push_back({ Rect{x0, y0, x1, y1} });
+        }
+    }
+
+    return out;
+}
+
+std::vector<Stall> bestStallsForRegion(const ParkingRegion& R)
+{
+    std::vector<Stall> best;
+    int bestCount = 0;
+
+    for (StallPattern p : {StallPattern::Perpendicular, StallPattern::Parallel}) {
+        auto candidate = generateStallsForStrip(R, p);
+        if (static_cast<int>(candidate.size()) > bestCount) {
+            bestCount = static_cast<int>(candidate.size());
+            best      = std::move(candidate);
+        }
+    }
+    return best;
+}
+
 
 Layout buildVerticalSnake(double lotW, double lotL, int N)
 {
@@ -207,6 +311,37 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
         Rect r{ laneX0[i], 0.0, laneX1[i], lotL };
         lanes.push_back({r});
     }
+
+    std::vector<ParkingRegion> regions;
+
+    // left margin
+    if (laneX0[0] > 0.5) {
+        regions.push_back(ParkingRegion{
+            Rect{0.0, 0.0, laneX0[0], lotL},
+            Edge::Right  // region is touched by lane on the right
+        });
+    }
+
+    // between lanes
+    for (int i = 0; i < N - 1; ++i) {
+        double x0 = laneX1[i];
+        double x1 = laneX0[i + 1];
+        if (x1 > x0 + 0.1) {
+            regions.push_back(ParkingRegion{
+                Rect{x0, 0.0, x1, lotL},
+                Edge::Left  // or Right; you can decide a convention
+            });
+        }
+    }
+
+    // right margin
+    if (laneX1[N-1] < lotW - 0.5) {
+        regions.push_back(ParkingRegion{
+            Rect{laneX1[N-1], 0.0, lotW, lotL},
+            Edge::Left
+        });
+    }
+
 
     // ----------------------------------------------------
     // Snake connectors between adjacent lanes
@@ -317,6 +452,11 @@ Layout buildVerticalSnake(double lotW, double lotL, int N)
     
     ensureTwoVerticalConnectors(L, lotW, lotL);
     finalizeLayout(L, lotW, lotL);
+    
+    if (hasTooNarrowLane(L)) {
+        L.valid = false;
+    }
+    
     return L;
 }
 
@@ -367,12 +507,99 @@ Layout buildHorizontalSnake(double lotW, double lotL, int N)
     // clean overlaps and compute areas for the real lot orientation
     ensureTwoVerticalConnectors(L, lotW, lotL);
     finalizeLayout(L, lotW, lotL);
+
+    if (hasTooNarrowLane(L)) {
+        L.valid = false;
+    }
+
     return L;
 }
 
 // --------------------------------------------------------
 // Scoring and global search over N + orientation
 // --------------------------------------------------------
+
+Layout buildSingleRowLayout(double lotW, double lotL)
+{
+    Layout L;
+    L.valid = false;
+
+    const double lotArea = lotW * lotL;
+
+    // Option A: stalls column along Y, depth along X
+    //   - requires: lotW >= STALL_DEPTH and lotL >= STALL_WIDTH
+    //   - stalls are 5m (x) by 2.5m (y), repeated along y
+    if (lotW >= STALL_DEPTH && lotL >= STALL_WIDTH) {
+        const int n = static_cast<int>(std::floor(lotL / STALL_WIDTH));
+        if (n > 0) {
+            const double x0 = 0.5 * (lotW - STALL_DEPTH);
+            const double x1 = x0 + STALL_DEPTH;
+
+            L.stalls.reserve(n);
+            for (int i = 0; i < n; ++i) {
+                double y0 = i * STALL_WIDTH;
+                double y1 = y0 + STALL_WIDTH;
+                L.stalls.push_back({ Rect{x0, y0, x1, y1} });
+            }
+
+            L.lanes.clear(); // no explicit lane in this special case
+
+            // Simple gates: bottom center -> top center
+            L.entrance.edge   = Edge::Bottom;
+            L.entrance.width  = STALL_WIDTH;
+            L.entrance.offset = 0.5 * (lotW - L.entrance.width);
+
+            L.exit.edge       = Edge::Top;
+            L.exit.width      = STALL_WIDTH;
+            L.exit.offset     = 0.5 * (lotW - L.exit.width);
+
+            double stallArea = n * STALL_WIDTH * STALL_DEPTH;
+            L.stallCount  = n;
+            L.usedArea    = stallArea;
+            L.wastedArea  = lotArea - stallArea;
+            L.valid       = true;
+            return L;
+        }
+    }
+
+    // Option B: rotate 90° – stalls row along X, depth along Y
+    //   - requires: lotL >= STALL_DEPTH and lotW >= STALL_WIDTH
+    if (lotL >= STALL_DEPTH && lotW >= STALL_WIDTH) {
+        const int n = static_cast<int>(std::floor(lotW / STALL_WIDTH));
+        if (n > 0) {
+            const double y0 = 0.5 * (lotL - STALL_DEPTH);
+            const double y1 = y0 + STALL_DEPTH;
+
+            L.stalls.reserve(n);
+            for (int i = 0; i < n; ++i) {
+                double x0 = i * STALL_WIDTH;
+                double x1 = x0 + STALL_WIDTH;
+                L.stalls.push_back({ Rect{x0, y0, x1, y1} });
+            }
+
+            L.lanes.clear(); // no explicit lane
+
+            // Gates: left center -> right center
+            L.entrance.edge   = Edge::Left;
+            L.entrance.width  = STALL_WIDTH;
+            L.entrance.offset = 0.5 * (lotL - L.entrance.width);
+
+            L.exit.edge       = Edge::Right;
+            L.exit.width      = STALL_WIDTH;
+            L.exit.offset     = 0.5 * (lotL - L.exit.width);
+
+            double stallArea = n * STALL_WIDTH * STALL_DEPTH;
+            L.stallCount  = n;
+            L.usedArea    = stallArea;
+            L.wastedArea  = lotArea - stallArea;
+            L.valid       = true;
+            return L;
+        }
+    }
+
+    // If neither orientation fits even a single stall, this lot is just too small.
+    return L;
+}
 
 double scoreLayout(const Layout& L)
 {
@@ -388,32 +615,55 @@ Layout chooseBestLayout(double lotW, double lotL)
     double bestScore = -1e30;
 
     const double moduleW = 2.0 * STALL_DEPTH + LANE_W;
-    int maxN_vert = static_cast<int>(std::floor(lotW / moduleW));
+    int maxN_vert  = static_cast<int>(std::floor(lotW / moduleW));
     int maxN_horiz = static_cast<int>(std::floor(lotL / moduleW));
 
-    // vertical lanes
+    // --- vertical snakes ---
     for (int N = 1; N <= maxN_vert; ++N) {
         Layout L = buildVerticalSnake(lotW, lotL, N);
         if (!L.valid) continue;
         double s = scoreLayout(L);
         if (s > bestScore) {
-            best = std::move(L);
+            best      = std::move(L);
             bestScore = s;
         }
     }
 
-    // horizontal lanes
+    // --- horizontal snakes ---
     for (int N = 1; N <= maxN_horiz; ++N) {
         Layout L = buildHorizontalSnake(lotW, lotL, N);
         if (!L.valid) continue;
         double s = scoreLayout(L);
         if (s > bestScore) {
-            best = std::move(L);
+            best      = std::move(L);
             bestScore = s;
         }
     }
 
+    // --- single-row candidate (even if snakes are valid) ---
+    {
+        Layout row = buildSingleRowLayout(lotW, lotL);
+        if (row.valid) {
+            double s = scoreLayout(row);
+            if (s > bestScore) {
+                best      = std::move(row);
+                bestScore = s;
+            }
+        }
+    }
+
     return best;
+}
+
+bool canFitAnyStall(double lotW, double lotL)
+{
+    // Orientation 1: stall-width along X, stall-depth along Y
+    bool orient1 = (lotW >= STALL_WIDTH && lotL >= STALL_DEPTH);
+
+    // Orientation 2: rotated 90° (width ↔ depth)
+    bool orient2 = (lotW >= STALL_DEPTH && lotL >= STALL_WIDTH);
+
+    return orient1 || orient2;
 }
 
 // --------------------------------------------------------
@@ -427,6 +677,11 @@ int main()
     cin  >> lotW;
     cout << "Enter lot length (y, metres): ";
     cin  >> lotL;
+
+    if (!canFitAnyStall(lotW, lotL)) {
+        cout << "\nLot is smaller than a single stall in both orientations.\n";
+        return 0;
+    }
 
     Layout best = chooseBestLayout(lotW, lotL);
 
