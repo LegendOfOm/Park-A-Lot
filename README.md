@@ -21,3 +21,4 @@ MAC Instructions
 4. Install the compiler (terminal. You probably already have this though): xcode-select --install
 5. Instal sfml (terminal): brew install sfml
 6. Adjust your IF NECESSARY (shouldn't be) in vsCode to match the Mac ones specifically.
+7. For your folder layout, make sure you utilize the macOS main file nad macOS vscode. Rename the macOS main to main.cpp
