@@ -4,6 +4,8 @@
 #include <cmath>
 #include <optional>
 #include <algorithm>
+#include "ui.hpp"
+#include <sstream>
 
 using std::cout;
 using std::cin;
@@ -95,6 +97,62 @@ bool rectsOverlap(const Rect& a, const Rect& b)
     return xOverlap > 1e-6 && yOverlap > 1e-6;
 }
 
+double unionArea(const std::vector<Rect>& rects)
+{
+    if (rects.empty()) return 0.0;
+
+    // Collect and sort unique x-coordinates
+    std::vector<double> xs;
+    xs.reserve(rects.size() * 2);
+    for (const auto& r : rects) {
+        xs.push_back(r.x0);
+        xs.push_back(r.x1);
+    }
+    std::sort(xs.begin(), xs.end());
+    xs.erase(std::unique(xs.begin(), xs.end()), xs.end());
+
+    double area = 0.0;
+
+    // Sweep between consecutive x-positions
+    for (std::size_t i = 0; i + 1 < xs.size(); ++i) {
+        double x0 = xs[i];
+        double x1 = xs[i + 1];
+        if (x1 <= x0) continue;
+
+        // Collect y-intervals for rectangles that cover this x-slab
+        std::vector<std::pair<double,double>> segs;
+        for (const auto& r : rects) {
+            if (r.x0 < x1 - 1e-9 && r.x1 > x0 + 1e-9) {
+                segs.emplace_back(r.y0, r.y1);
+            }
+        }
+        if (segs.empty()) continue;
+
+        // Merge overlapping y-intervals
+        std::sort(segs.begin(), segs.end());
+        double yCovered = 0.0;
+        double curStart = segs[0].first;
+        double curEnd   = segs[0].second;
+
+        for (std::size_t j = 1; j < segs.size(); ++j) {
+            double s = segs[j].first;
+            double e = segs[j].second;
+            if (s <= curEnd) {
+                curEnd = std::max(curEnd, e);
+            } else {
+                yCovered += (curEnd - curStart);
+                curStart = s;
+                curEnd   = e;
+            }
+        }
+        yCovered += (curEnd - curStart);
+
+        area += (x1 - x0) * yCovered;
+    }
+
+    return area;
+}
+
 // Clean up layout: remove stalls that overlap lanes and recompute areas.
 void finalizeLayout(Layout& L, double lotW, double lotL)
 {
@@ -102,39 +160,42 @@ void finalizeLayout(Layout& L, double lotW, double lotL)
 
     const double lotArea = lotW * lotL;
 
-    // Lane area is always fully used
-    double laneArea = 0.0;
-    for (const auto& ln : L.lanes)
-        laneArea += rectArea(ln.r);
-
-    // Keep only stalls that don't collide with any lane
+    // 1) Remove stalls that overlap lanes (your old logic)
     std::vector<Stall> cleaned;
     cleaned.reserve(L.stalls.size());
-    double stallArea = 0.0;
 
-    for (const auto& s : L.stalls)
-    {
+    for (const auto& s : L.stalls) {
         bool bad = false;
-        for (const auto& ln : L.lanes)
-        {
-            if (rectsOverlap(s.r, ln.r))
-            {
+        for (const auto& ln : L.lanes) {
+            if (rectsOverlap(s.r, ln.r)) {
                 bad = true;
                 break;
             }
         }
-        if (!bad)
-        {
+        if (!bad) {
             cleaned.push_back(s);
-            stallArea += rectArea(s.r);
         }
     }
-
-    L.stalls     = std::move(cleaned);
+    L.stalls = std::move(cleaned);
     L.stallCount = static_cast<int>(L.stalls.size());
+
+    // 2) Build raw rect lists
+    std::vector<Rect> laneRects;
+    laneRects.reserve(L.lanes.size());
+    for (const auto& ln : L.lanes) laneRects.push_back(ln.r);
+
+    std::vector<Rect> stallRects;
+    stallRects.reserve(L.stalls.size());
+    for (const auto& s : L.stalls) stallRects.push_back(s.r);
+
+    // 3) Compute union areas (no double counting)
+    double laneArea  = unionArea(laneRects);
+    double stallArea = unionArea(stallRects);
+
     L.usedArea   = laneArea + stallArea;
     L.wastedArea = std::max(0.0, lotArea - L.usedArea);
 }
+
 
 // Ensure we have two full-height vertical connectors (for short lots
 // where only one vertical lane was created).
@@ -723,18 +784,38 @@ bool canFitAnyStall(double lotW, double lotL)
     return orient1 || orient2;
 }
 
+
+
 // --------------------------------------------------------
 // SFML drawing
 // --------------------------------------------------------
 
 int main()
 {
-    double lotW, lotL;
-    cout << "Enter lot width  (x, metres): ";
-    cin  >> lotW;
-    cout << "Enter lot length (y, metres): ";
-    cin  >> lotL;
+    // -------- 1) Get config from UI --------
+    auto cfgOpt = runUI();
+    if (!cfgOpt) {
+        std::cout << "UI cancelled by user.\n";
+        return 0;
+    }
 
+    UserConfig cfg = *cfgOpt;
+
+    // NOTE: the algorithm still uses the compile-time stall constants.
+    // We only use UI stall size for display / future use.
+    if (std::abs(cfg.stallWidth - STALL_WIDTH) > 1e-6 ||
+        std::abs(cfg.stallDepth - STALL_DEPTH) > 1e-6)
+    {
+        std::cout
+            << "Note: UI stall size (" << cfg.stallWidth << " x " << cfg.stallDepth
+            << ") differs from algorithm constants (" << STALL_WIDTH << " x "
+            << STALL_DEPTH << ").\n";
+    }
+
+    double lotW = cfg.lotWidth;
+    double lotL = cfg.lotLength;
+
+    // -------- 2) Original logic for layout --------
     if (!canFitAnyStall(lotW, lotL)) {
         cout << "\nLot is smaller than a single stall in both orientations.\n";
         return 0;
@@ -747,6 +828,7 @@ int main()
         return 0;
     }
 
+    // ---- This is the summary you said you lost ----
     cout << "\nBest layout:\n";
     cout << "  Stalls:      " << best.stallCount << "\n";
     cout << "  Used area:   " << best.usedArea   << " m^2\n";
@@ -817,6 +899,22 @@ int main()
         stallShapes.push_back(r);
     }
 
+    // -------- 3) Stats text overlay in the SFML window --------
+    sf::Font statsFont;
+    loadSafeFont(statsFont); // from ui.hpp / ui.cpp
+
+    std::ostringstream statsStream;
+    statsStream
+        << "Stalls: " << best.stallCount
+        << "    Used: " << best.usedArea << " m^2"
+        << "    Wasted: " << best.wastedArea << " m^2";
+
+    sf::Text statsText(statsFont, statsStream.str(), 18);
+    statsText.setFillColor(sf::Color::Black);
+
+    statsText.setPosition(sf::Vector2f{margin, 5.f}); // top-left
+
+    // -------- 4) Render loop --------
     while (window.isOpen()) {
         while (const std::optional event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
@@ -827,7 +925,8 @@ int main()
         window.clear(sf::Color::White);
         window.draw(lotRect);
         for (const auto& r : laneShapes)   window.draw(r);
-        for (const auto& r : stallShapes) window.draw(r);
+        for (const auto& r : stallShapes)  window.draw(r);
+        window.draw(statsText);            // <-- overlay stats
         window.display();
     }
 
