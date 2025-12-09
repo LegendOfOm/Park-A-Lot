@@ -2,20 +2,40 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run SFML App (gdb)",
+      "name": "(gdb) Launch SFML Test",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/sfml_app.exe",
+      "program": "${workspaceFolder}/sfml_test.exe",
       "cwd": "${workspaceFolder}",
       "args": [],
       "externalConsole": true,
+      "preLaunchTask": "build-sfml-64",
       "MIMode": "gdb",
       "miDebuggerPath": "C:/msys64/mingw64/bin/gdb.exe",
-      "preLaunchTask": "build-sfml-64",
       "setupCommands": [
         {
-          "description": "Enable pretty printing",
-          "text": "-enable-pretty-printing"
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "cwd": "c:/dev/Coding Projects/SFML",
+      "program": "c:/dev/Coding Projects/SFML/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/msys64/mingw64/bin/gdb.exe",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
         }
       ]
     }
