@@ -2,32 +2,40 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build-sfml-mac",
+      "label": "build-sfml",
       "type": "shell",
-      "command": "clang++",
+      "command": "g++",                // default (Linux/mac)
       "args": [
         "-std=c++17",
         "${workspaceFolder}/main.cpp",
-
-        "-I", "/opt/homebrew/include",
-        "-L", "/opt/homebrew/lib",
-
+        "${workspaceFolder}/ui.cpp",
+        "-I", "/opt/homebrew/opt/sfml/include",   // adjust if needed
+        "-L", "/opt/homebrew/opt/sfml/lib",
         "-lsfml-graphics",
         "-lsfml-window",
         "-lsfml-system",
-
-        "-o", "${workspaceFolder}/sfml_app",
-
-        "-rpath", "/opt/homebrew/lib"
+        "-o", "${workspaceFolder}/sfml_test"
       ],
-      "options": {
-        "cwd": "${workspaceFolder}"
+      "windows": {
+        "command": "C:/msys64/mingw64/bin/g++.exe",
+        "args": [
+          "-g",
+          "-std=c++17",
+          "-I", "C:/msys64/mingw64/include",
+          "${workspaceFolder}/main.cpp",
+          "${workspaceFolder}/ui.cpp",
+          "-L", "C:/msys64/mingw64/lib",
+          "-lsfml-graphics",
+          "-lsfml-window",
+          "-lsfml-system",
+          "-o", "${workspaceFolder}/sfml_test.exe"
+        ]
       },
       "group": {
         "kind": "build",
         "isDefault": true
       },
-      "problemMatcher": ["$gcc"]
+      "problemMatcher": "$gcc"
     }
   ]
 }
